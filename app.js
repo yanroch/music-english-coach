@@ -123,6 +123,7 @@ const state = {
   practiceValues: {},
   flashPos: 0,
   flashRevealed: false,
+  exportPanel: null, // { url, filename, json } once a backup has been generated
 };
 
 /* ---------------- init ---------------- */
@@ -281,13 +282,31 @@ function renderSettingsModal() {
         <div class="mt-24" style="border-top:1px solid var(--border);padding-top:16px;">
           <span class="label-eyebrow">Backup dos dados</span>
           <p class="muted small mt-8">Exporte suas músicas, flashcards e progresso para um arquivo, ou importe um backup salvo antes.</p>
-          <div class="flex-gap mt-12">
-            <button class="btn btn-subtle" data-action="export-data">Exportar backup</button>
-            <label class="btn btn-subtle" style="cursor:pointer;">
-              Importar backup
-              <input type="file" accept="application/json" id="import-file-input" style="display:none" data-action="import-data" />
-            </label>
-          </div>
+
+          ${!state.exportPanel ? `
+            <div class="flex-gap mt-12">
+              <button class="btn btn-subtle" data-action="export-data">Gerar backup</button>
+              <label class="btn btn-subtle" style="cursor:pointer;">
+                Importar backup
+                <input type="file" accept="application/json" id="import-file-input" style="display:none" data-action="import-data" />
+              </label>
+            </div>` : `
+            <div class="mt-12">
+              <a class="btn btn-primary" href="${state.exportPanel.url}" download="${state.exportPanel.filename}" style="text-decoration:none;display:inline-flex;">
+                ⬇ Baixar ${state.exportPanel.filename}
+              </a>
+              <p class="muted small mt-8">Se o toque acima não baixar nada (comum em alguns navegadores de celular), use uma destas opções:</p>
+              <div class="flex-gap mt-8" style="flex-wrap:wrap;">
+                <button class="btn btn-subtle" data-action="share-export">Compartilhar arquivo</button>
+                <button class="btn btn-subtle" data-action="copy-export">Copiar texto</button>
+                <label class="btn btn-subtle" style="cursor:pointer;">
+                  Importar backup
+                  <input type="file" accept="application/json" id="import-file-input" style="display:none" data-action="import-data" />
+                </label>
+              </div>
+              <textarea id="export-textarea" class="field-textarea mt-8" readonly style="font-size:11px;min-height:80px;" onclick="this.select()">${escapeHtml(state.exportPanel.json)}</textarea>
+              <p class="muted small mt-8">Ou toque no campo acima, selecione tudo e copie manualmente.</p>
+            </div>`}
         </div>
       </div>
     </div>`;
@@ -618,6 +637,13 @@ function downloadFile(filename, content, mime) {
   URL.revokeObjectURL(url);
 }
 
+function closeSettingsPanel() {
+  if (state.exportPanel?.url) URL.revokeObjectURL(state.exportPanel.url);
+  state.exportPanel = null;
+  state.showSettings = false;
+  render();
+}
+
 /* ---------------- event delegation ---------------- */
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-action]");
@@ -637,16 +663,12 @@ document.addEventListener("click", async (e) => {
       render();
       break;
     case "close-settings":
-      state.showSettings = false;
-      render();
+      closeSettingsPanel();
       break;
     case "close-settings-backdrop":
       // Only close when the click landed on the backdrop itself, not on
       // something inside the modal box that happened to bubble up to it.
-      if (e.target === el) {
-        state.showSettings = false;
-        render();
-      }
+      if (e.target === el) closeSettingsPanel();
       break;
 
     case "save-api-key": {
@@ -665,7 +687,46 @@ document.addEventListener("click", async (e) => {
         stats: state.stats,
         exportedAt: new Date().toISOString(),
       };
-      downloadFile(`music-english-coach-backup-${todayStr()}.json`, JSON.stringify(backup, null, 2), "application/json");
+      const json = JSON.stringify(backup, null, 2);
+      const filename = `music-english-coach-backup-${todayStr()}.json`;
+      if (state.exportPanel?.url) URL.revokeObjectURL(state.exportPanel.url);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      state.exportPanel = { url, filename, json };
+      render();
+      break;
+    }
+
+    case "share-export": {
+      if (!state.exportPanel) return;
+      try {
+        const file = new File([state.exportPanel.json], state.exportPanel.filename, { type: "application/json" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: "Backup Music English Coach" });
+        } else {
+          alert("Compartilhamento de arquivo não é suportado neste navegador. Use 'Copiar texto' ou o link de download.");
+        }
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          alert("Não foi possível compartilhar. Use 'Copiar texto' como alternativa.");
+        }
+      }
+      break;
+    }
+
+    case "copy-export": {
+      if (!state.exportPanel) return;
+      try {
+        await navigator.clipboard.writeText(state.exportPanel.json);
+        alert("Backup copiado! Cole (colar) num app de Notas, e-mail, etc. para guardar.");
+      } catch (err) {
+        const textarea = document.getElementById("export-textarea");
+        if (textarea) {
+          textarea.select();
+          textarea.setSelectionRange(0, textarea.value.length);
+        }
+        alert("Não deu para copiar automaticamente. O texto já está selecionado abaixo — use copiar (Ctrl/Cmd+C) manualmente.");
+      }
       break;
     }
 
