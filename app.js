@@ -264,7 +264,7 @@ function renderNavTabs() {
 function renderSettingsModal() {
   return `
     <div class="modal-backdrop" data-action="close-settings-backdrop">
-      <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-box">
         <div class="flex-between">
           <span style="font-family:var(--display-font);font-size:18px;">Chave da API Anthropic</span>
           <button data-action="close-settings" class="btn btn-ghost" style="padding:4px 8px;">✕</button>
@@ -637,9 +637,16 @@ document.addEventListener("click", async (e) => {
       render();
       break;
     case "close-settings":
-    case "close-settings-backdrop":
       state.showSettings = false;
       render();
+      break;
+    case "close-settings-backdrop":
+      // Only close when the click landed on the backdrop itself, not on
+      // something inside the modal box that happened to bubble up to it.
+      if (e.target === el) {
+        state.showSettings = false;
+        render();
+      }
       break;
 
     case "save-api-key": {
